@@ -145,11 +145,58 @@ const SCHEDULED_TASKS_MENU = [
 ];
 
 // ============================================================================
+// ONBOARDING PROFILES
+// Profile data mirrored from src/onboarding/profiles.ts.
+// Domain IDs must match ONBOARDING_DOMAINS ids above.
+// ============================================================================
+const ONBOARDING_PROFILES = [
+  {
+    id: "life-in-recovery",
+    name: "Life in Recovery",
+    tagline: "Injury, illness, or mental health recovery — and everything that comes with it.",
+    description: "You're dealing with a WorkCover claim, NDIS application, mental health condition, or long-term illness — and the financial and legal complexity that comes with it.",
+    icon: "🫀",
+    accentColor: "#fb7185",        // rose-400
+    accentBg: "rgba(251,113,133,0.08)",
+    accentBorder: "#fb7185",
+    domains: ["health", "financial", "workcover-legal", "life-admin"],
+    domainLabels: ["Health", "Financial", "Legal", "Life Admin"],
+    scheduledTaskIds: ["morning-briefing", "financial-check", "weekly-review"],
+    taskCadence: "5 tasks — daily, 2× weekly, fortnightly, monthly",
+    whoIsThisFor: [
+      "Managing a WorkCover, NDIS, or TPD claim",
+      "Living with mental health conditions or chronic illness",
+      "Financial hardship from reduced work capacity",
+      "Juggling medical, legal, and daily life on limited energy",
+    ],
+    whatYouGet: [
+      "4 agents pre-activated: Health, Financial, Legal, Life Admin",
+      "Daily morning capacity check-in",
+      "Weekly claim review (Mon) + financial check (Sun)",
+      "Fortnightly PIRS functional assessments",
+      "Monthly cross-domain progress reflection",
+    ],
+    healthHints: { enablePIRS: true, enableCDP: true, enableCapacity: true },
+  },
+  // Future profiles registered here: solo-builder, career-transition, student
+];
+
+// ============================================================================
 // API CLIENT
 // ============================================================================
-const API_BASE = (typeof window !== 'undefined' && window.LIFEOS_API_URL) || 'http://localhost:3000';
+// API_BASE resolution order:
+//   1. Vite build-time env var (VITE_LIFEOS_API_URL) — set in Vercel env vars for production
+//   2. Runtime window.LIFEOS_API_URL — set by main.jsx or manually for testing
+//   3. localhost:3000 — local development fallback
+const API_BASE =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_LIFEOS_API_URL) ||
+  (typeof window !== 'undefined' && window.LIFEOS_API_URL) ||
+  'http://localhost:3000';
 
-async function apiCall(endpoint, options = {}, apiToken) {
+// onUnauthorized is an optional callback fired when the server returns 401.
+// The App component passes setScreen("onboard") so the user is immediately
+// routed back to Setup to re-enter their server token.
+async function apiCall(endpoint, options = {}, apiToken, onUnauthorized = null) {
   const headers = {
     'Content-Type': 'application/json',
     ...(apiToken ? { 'Authorization': `Bearer ${apiToken}` } : {}),
@@ -157,6 +204,14 @@ async function apiCall(endpoint, options = {}, apiToken) {
   };
   const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
   const json = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+
+  // 401 — token invalid or missing. Fire callback so the App can route to Setup.
+  if (res.status === 401) {
+    if (onUnauthorized) onUnauthorized();
+    const err = Object.assign(new Error('Server token invalid or expired — please re-enter it in Setup.'), { status: 401 });
+    throw err;
+  }
+
   if (!res.ok || !json.success) {
     const err = Object.assign(new Error(json?.error || `HTTP ${res.status}`), { status: res.status });
     throw err;
@@ -165,6 +220,8 @@ async function apiCall(endpoint, options = {}, apiToken) {
 }
 
 function isRateLimitError(err) { return err && err.status === 429; }
+function isUnauthorizedError(err) { return err && err.status === 401; }
+function isNoApiKeyError(err) { return err && (err.status === 402 || (err.message && err.message.startsWith('NO_API_KEY'))); }
 
 function rateLimitMessage(context) {
   if (context === 'health') return "I need a moment to gather my thoughts — please try again shortly.";
@@ -244,7 +301,150 @@ function EmptyState({ icon, title, desc }) {
 // ============================================================================
 // SCREEN 1 — DAILY BRIEF
 // ============================================================================
-function DailyBrief({ tokenUsed, tokenTotal, apiToken }) {
+// ============================================================================
+// PROFILE PICKER
+// Pre-wizard screen. Shows profile cards + "Build my own" option.
+// onSelect(profile) — user chose a profile
+// onCustom()        — user wants the manual wizard path
+// ============================================================================
+function ProfilePicker({ onSelect, onCustom }) {
+  const [hovered, setHovered] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+
+  return (
+    <div className="max-w-lg mx-auto font-body slide-in">
+      {/* Header */}
+      <div className="mb-8 text-center">
+        <div className="font-display text-zinc-100 text-xl font-semibold mb-2">How would you describe your situation?</div>
+        <div className="text-zinc-500 text-sm">Choose a starting point — you can customise everything after setup.</div>
+      </div>
+
+      {/* Profile cards */}
+      <div className="space-y-3 mb-4">
+        {ONBOARDING_PROFILES.map(p => {
+          const isExpanded = expanded === p.id;
+          return (
+            <div
+              key={p.id}
+              style={{
+                border: `1px solid ${hovered === p.id ? p.accentBorder : "#27272a"}`,
+                background: hovered === p.id ? p.accentBg : "#0f1014",
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+              className="rounded-xl overflow-hidden"
+            >
+              {/* Card header — always visible */}
+              <div
+                className="p-4 cursor-pointer"
+                onMouseEnter={() => setHovered(p.id)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => setExpanded(isExpanded ? null : p.id)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <span className="text-2xl flex-shrink-0 mt-0.5">{p.icon}</span>
+                    <div className="min-w-0">
+                      <div className="font-display text-zinc-100 text-sm font-semibold">{p.name}</div>
+                      <div className="text-zinc-400 text-xs mt-0.5 leading-relaxed">{p.tagline}</div>
+                      {/* Domain pills */}
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {p.domainLabels.map(label => (
+                          <span key={label} className="px-2 py-0.5 rounded-full text-xs font-mono" style={{ background: "rgba(255,255,255,0.05)", color: "#71717a" }}>
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Task cadence + expand chevron */}
+                  <div className="flex-shrink-0 text-right">
+                    <div className="font-mono text-xs text-zinc-600">{p.taskCadence}</div>
+                    <div className="font-mono text-xs text-zinc-700 mt-1">{isExpanded ? "▲ less" : "▼ more"}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Expanded detail */}
+              {isExpanded && (
+                <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="font-mono text-xs text-zinc-600 mb-1.5">WHO THIS IS FOR</div>
+                      <ul className="space-y-1">
+                        {p.whoIsThisFor.map((item, i) => (
+                          <li key={i} className="text-xs text-zinc-400 flex items-start gap-1.5">
+                            <span className="text-zinc-700 flex-shrink-0 mt-0.5">·</span>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-mono text-xs text-zinc-600 mb-1.5">WHAT YOU GET</div>
+                      <ul className="space-y-1">
+                        {p.whatYouGet.map((item, i) => (
+                          <li key={i} className="text-xs text-zinc-400 flex items-start gap-1.5">
+                            <span style={{ color: p.accentColor }} className="flex-shrink-0 mt-0.5">✓</span>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onSelect(p)}
+                    className="w-full py-2.5 rounded-lg text-sm font-medium font-display transition-colors"
+                    style={{ background: p.accentColor, color: "#fff" }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = "0.9"}
+                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                  >
+                    Start with {p.name} →
+                  </button>
+                </div>
+              )}
+
+              {/* Quick-select button when not expanded */}
+              {!isExpanded && (
+                <div
+                  className="px-4 pb-3"
+                  onMouseEnter={() => setHovered(p.id)}
+                  onMouseLeave={() => setHovered(null)}
+                >
+                  <button
+                    onClick={() => onSelect(p)}
+                    className="px-4 py-1.5 rounded-lg text-xs font-medium font-mono transition-all"
+                    style={{ background: "rgba(255,255,255,0.04)", color: "#a1a1aa", border: "1px solid #27272a" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = p.accentBorder; e.currentTarget.style.color = p.accentColor; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#27272a"; e.currentTarget.style.color = "#a1a1aa"; }}
+                  >
+                    Select →
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Build my own */}
+      <button
+        onClick={onCustom}
+        className="w-full p-4 rounded-xl border border-zinc-800 text-left hover:border-zinc-700 transition-colors"
+        style={{ background: "transparent" }}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-display text-zinc-300 text-sm font-medium">⚙  Build my own</div>
+            <div className="text-zinc-600 text-xs mt-0.5">Choose domains and tasks manually</div>
+          </div>
+          <span className="font-mono text-xs text-zinc-700">→</span>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function DailyBrief({ tokenUsed, tokenTotal, apiToken, onUnauthorized }) {
   const [sections, setSections] = useState(MOCK_BRIEF);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -262,7 +462,7 @@ function DailyBrief({ tokenUsed, tokenTotal, apiToken }) {
     setRefreshing(true);
     setBriefError(null);
     try {
-      const json = await apiCall('/api/briefing?sel=3', {}, apiToken);
+      const json = await apiCall('/api/briefing?sel=3', {}, apiToken, onUnauthorized);
       if (json.data) {
         // Replace the orchestrator section with live briefing data
         const liveText = typeof json.data === 'string' ? json.data : JSON.stringify(json.data);
@@ -271,7 +471,9 @@ function DailyBrief({ tokenUsed, tokenTotal, apiToken }) {
         ));
       }
     } catch (err) {
-      setBriefError(isRateLimitError(err)
+      setBriefError(isUnauthorizedError(err)
+        ? 'Server token invalid — redirecting to Setup…'
+        : isRateLimitError(err)
         ? rateLimitMessage('orchestrator')
         : !apiToken ? 'Enter your server token in Setup to connect to your LifeOS backend.'
         : 'Could not refresh — is the backend running?');
@@ -392,7 +594,7 @@ function DailyBrief({ tokenUsed, tokenTotal, apiToken }) {
 // ============================================================================
 // SCREEN 2 — CONVERSATION
 // ============================================================================
-function Conversation({ tokenUsed, tokenTotal, apiToken }) {
+function Conversation({ tokenUsed, tokenTotal, apiToken, onUnauthorized }) {
   const [messages, setMessages] = useState(MOCK_MESSAGES);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -421,7 +623,7 @@ function Conversation({ tokenUsed, tokenTotal, apiToken }) {
       const json = await apiCall(`/api/agent/${targetAgent}`, {
         method: 'POST',
         body: JSON.stringify({ message: sentInput }),
-      }, apiToken);
+      }, apiToken, onUnauthorized);
       const responseText = json.data?.response || "Response received but empty — check the backend logs.";
       setMessages(m => [...m, {
         role: "assistant",
@@ -431,7 +633,11 @@ function Conversation({ tokenUsed, tokenTotal, apiToken }) {
       }]);
     } catch (err) {
       const isHealth = activeAgent === "health";
-      const errText = isRateLimitError(err)
+      const errText = isUnauthorizedError(err)
+        ? 'Server token invalid — redirecting to Setup to re-enter it…'
+        : isNoApiKeyError(err)
+        ? 'No Anthropic API key set — go to Settings → Usage tab to enter your sk-ant-… key, then try again.'
+        : isRateLimitError(err)
         ? rateLimitMessage(isHealth ? 'health' : 'general')
         : !apiToken
           ? "No server token set — go to Setup → Preferences to connect to your backend."
@@ -545,7 +751,9 @@ function Conversation({ tokenUsed, tokenTotal, apiToken }) {
 // SCREEN 3 — ONBOARDING WIZARD
 // ============================================================================
 function OnboardingWizard({ onComplete }) {
-  const [step, setStep] = useState(0);
+  // step -1 = profile picker; step 0 = domains (skipped when profile applied); steps 1-4 = wizard
+  const [step, setStep] = useState(-1);
+  const [appliedProfile, setAppliedProfile] = useState(null);
   const [selectedDomains, setSelectedDomains] = useState(new Set(["health", "financial", "life-admin"]));
   const [profile, setProfile] = useState({ name: "", timezone: "Australia/Brisbane", conditions: "", persona: "balanced" });
   const [scheduledTasks, setScheduledTasks] = useState(new Set(["morning-briefing"]));
@@ -563,7 +771,35 @@ function OnboardingWizard({ onComplete }) {
 
   const consentsComplete = consents.apiDisclosure && consents.notAProfessionalService && consents.medicalDisclaimer;
 
-  const STEPS = ["Domains", "Context", "Custom Agents", "Automation", "Preferences"];
+  // When a profile is applied, skip the Domains step — show Context first
+  const STEPS = appliedProfile
+    ? ["Context", "Custom Agents", "Automation", "Preferences"]
+    : ["Domains", "Context", "Custom Agents", "Automation", "Preferences"];
+
+  // Map logical step index to STEPS array index for progress bar
+  // With profile: step 1→0, 2→1, 3→2, 4→3
+  // Without profile: step 0→0, 1→1, 2→2, 3→3, 4→4
+  const progressIndex = appliedProfile ? step - 1 : step;
+
+  function applyProfile(p) {
+    setAppliedProfile(p);
+    setSelectedDomains(new Set(p.domains));
+    setScheduledTasks(new Set(p.scheduledTaskIds));
+    // Pre-set persona to supportive for recovery profile
+    if (p.healthHints?.enableCapacity) setProfile(prev => ({ ...prev, persona: "supportive" }));
+    setStep(1); // skip Domains step
+  }
+
+  function goBack() {
+    if (step === 1 && appliedProfile) {
+      // Back from first wizard step when profile was used → return to profile picker
+      setStep(-1);
+    } else {
+      setStep(s => Math.max(0, s - 1));
+    }
+  }
+
+  const maxStep = appliedProfile ? 4 : 4; // last step is always 4
   const totalWeight = [...selectedDomains].reduce((sum, id) => {
     const d = ONBOARDING_DOMAINS.find(x => x.id === id);
     return sum + (d?.weight || 0);
@@ -581,14 +817,26 @@ function OnboardingWizard({ onComplete }) {
     });
   }
 
-  function complete() {
+  async function complete() {
     if (!consentsComplete) return;
     setCompleting(true);
-    setTimeout(() => {
-      setCompleting(false);
-      setDone(true);
-      if (onComplete) onComplete(authToken, customAgents.filter(ca => ca.name.trim()));
-    }, 2000);
+
+    // If the user entered an API key, POST it to the backend before navigating away.
+    // Non-blocking: a failure here doesn't abort setup — the key can be re-entered in Settings.
+    if (apiKey.trim() && authToken.trim()) {
+      try {
+        await apiCall('/api/setup/anthropic-key', {
+          method: 'POST',
+          body: JSON.stringify({ apiKey: apiKey.trim() }),
+        }, authToken);
+      } catch {
+        // Silently continue — user can update the key from Settings
+      }
+    }
+
+    setCompleting(false);
+    setDone(true);
+    if (onComplete) onComplete(authToken, apiKey.trim(), customAgents.filter(ca => ca.name.trim()));
   }
 
   if (done) {
@@ -604,17 +852,45 @@ function OnboardingWizard({ onComplete }) {
     );
   }
 
+  // Profile picker screen (step -1)
+  if (step === -1) {
+    return (
+      <ProfilePicker
+        onSelect={applyProfile}
+        onCustom={() => setStep(0)}
+      />
+    );
+  }
+
   return (
     <div className="max-w-lg mx-auto font-body">
+      {/* Applied profile badge */}
+      {appliedProfile && (
+        <div className="flex items-center gap-2 mb-5 px-3 py-2 rounded-lg border" style={{ borderColor: appliedProfile.accentBorder, background: appliedProfile.accentBg }}>
+          <span className="text-base">{appliedProfile.icon}</span>
+          <div className="flex-1 min-w-0">
+            <span className="font-display text-xs font-medium" style={{ color: appliedProfile.accentColor }}>{appliedProfile.name}</span>
+            <span className="text-zinc-500 text-xs ml-2">profile applied — domains pre-configured</span>
+          </div>
+          <button
+            onClick={() => { setAppliedProfile(null); setStep(-1); }}
+            className="font-mono text-xs text-zinc-600 hover:text-zinc-400 flex-shrink-0"
+            title="Change profile"
+          >
+            change
+          </button>
+        </div>
+      )}
+
       {/* Progress */}
       <div className="flex items-center gap-2 mb-8">
         {STEPS.map((s, i) => (
           <div key={i} className="flex items-center gap-2 flex-1">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono flex-shrink-0 ${i < step ? "bg-blue-600 text-white" : i === step ? "border border-blue-500 text-blue-400" : "border border-zinc-700 text-zinc-600"}`}>
-              {i < step ? "✓" : i + 1}
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono flex-shrink-0 ${i < progressIndex ? "bg-blue-600 text-white" : i === progressIndex ? "border border-blue-500 text-blue-400" : "border border-zinc-700 text-zinc-600"}`}>
+              {i < progressIndex ? "✓" : i + 1}
             </div>
-            <div className={`text-xs font-mono ${i === step ? "text-zinc-300" : i < step ? "text-zinc-500" : "text-zinc-700"}`}>{s}</div>
-            {i < STEPS.length - 1 && <div className={`flex-1 h-px ${i < step ? "bg-zinc-700" : "bg-zinc-800"}`} />}
+            <div className={`text-xs font-mono ${i === progressIndex ? "text-zinc-300" : i < progressIndex ? "text-zinc-500" : "text-zinc-700"}`}>{s}</div>
+            {i < STEPS.length - 1 && <div className={`flex-1 h-px ${i < progressIndex ? "bg-zinc-700" : "bg-zinc-800"}`} />}
           </div>
         ))}
       </div>
@@ -781,9 +1057,30 @@ function OnboardingWizard({ onComplete }) {
               </div>
             </div>
             <div>
-              <label className="block font-mono text-xs text-zinc-500 mb-1">BYOK — Anthropic API key <span className="text-zinc-700">(Trial tier)</span></label>
-              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-ant-…" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-400 font-mono placeholder-zinc-700 outline-none focus:border-zinc-500" />
-              <div className="text-xs text-zinc-600 mt-1">Your Anthropic key for direct API costs. Stored encrypted, never logged.</div>
+              <label className="block font-mono text-xs text-zinc-500 mb-1">
+                Anthropic API key
+                <span className="text-zinc-700 ml-1">(required to activate agents)</span>
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="sk-ant-…"
+                className={`w-full bg-zinc-900 border rounded-lg px-3 py-2 text-sm text-zinc-400 font-mono placeholder-zinc-700 outline-none focus:border-zinc-500 ${
+                  apiKey && !apiKey.startsWith('sk-ant-') ? 'border-amber-500/60' : 'border-zinc-700'
+                }`}
+              />
+              {apiKey && !apiKey.startsWith('sk-ant-') && (
+                <div className="font-mono text-xs text-amber-500 mt-1">Key must start with sk-ant-</div>
+              )}
+              {apiKey && apiKey.startsWith('sk-ant-') && (
+                <div className="font-mono text-xs text-emerald-500 mt-1">✓ Key format looks correct</div>
+              )}
+              {!apiKey && (
+                <div className="text-xs text-zinc-600 mt-1">
+                  Get your key at <span className="text-zinc-500">console.anthropic.com</span> — stored on your server only, never transmitted elsewhere.
+                </div>
+              )}
             </div>
 
             <div>
@@ -817,19 +1114,22 @@ function OnboardingWizard({ onComplete }) {
 
       {/* Navigation */}
       <div className="flex justify-between mt-8">
-        <button onClick={() => setStep(s => Math.max(0, s - 1))} className={`px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors ${step === 0 ? "invisible" : ""}`}>
+        <button
+          onClick={goBack}
+          className={`px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors ${(step === 0 && !appliedProfile) ? "invisible" : ""}`}
+        >
           ← Back
         </button>
-        {step < STEPS.length - 1 ? (
+        {step < maxStep ? (
           <button onClick={() => setStep(s => s + 1)} className="px-5 py-2 bg-blue-600 text-white text-sm rounded-xl hover:bg-blue-500 transition-colors">
             Continue →
           </button>
         ) : (
           <div className="flex flex-col items-end gap-1.5">
-            {step === STEPS.length - 1 && !consentsComplete && (
+            {step === maxStep && !consentsComplete && (
               <div className="font-mono text-xs text-amber-500/80">Check all three boxes above to continue</div>
             )}
-            <button onClick={complete} disabled={completing || (step === STEPS.length - 1 && !consentsComplete)} className="flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white text-sm rounded-xl hover:bg-emerald-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            <button onClick={complete} disabled={completing || (step === maxStep && !consentsComplete)} className="flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white text-sm rounded-xl hover:bg-emerald-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               {completing ? <><Spinner /> Setting up…</> : "Launch LifeOS →"}
             </button>
           </div>
@@ -940,12 +1240,49 @@ function Dashboard({ tokenUsed, tokenTotal }) {
 // ============================================================================
 // SCREEN 5 — SETTINGS
 // ============================================================================
-function Settings({ tokenUsed, tokenTotal }) {
+function Settings({ tokenUsed, tokenTotal, apiToken, onTokenUpdate, onApiKeyUpdate }) {
   const [activeTab, setActiveTab] = useState("plan");
-  const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [newToken, setNewToken] = useState("");
+  const [tokenSaved, setTokenSaved] = useState(false);
+  const [newApiKey, setNewApiKey] = useState("");
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState("");
+
+  function saveToken() {
+    if (!newToken.trim()) return;
+    onTokenUpdate(newToken.trim());
+    setNewToken("");
+    setTokenSaved(true);
+    setTimeout(() => setTokenSaved(false), 3000);
+  }
 
   const TABS = ["plan", "agents", "schedules", "usage", "data"];
+
+  async function saveApiKey() {
+    const key = newApiKey.trim();
+    if (!key || !key.startsWith('sk-ant-')) {
+      setApiKeyError('Key must start with sk-ant-');
+      return;
+    }
+    setApiKeyError("");
+    setApiKeySaving(true);
+    try {
+      await apiCall('/api/setup/anthropic-key', {
+        method: 'POST',
+        body: JSON.stringify({ apiKey: key }),
+      }, apiToken);
+      setNewApiKey("");
+      setApiKeySaved(true);
+      if (onApiKeyUpdate) onApiKeyUpdate(key);
+      setTimeout(() => setApiKeySaved(false), 3000);
+    } catch (err) {
+      setApiKeyError(err.message || 'Failed to update key — is the server running?');
+    } finally {
+      setApiKeySaving(false);
+    }
+  }
 
   return (
     <div className="max-w-xl mx-auto font-body">
@@ -975,6 +1312,41 @@ function Settings({ tokenUsed, tokenTotal }) {
             <div className="border-t border-zinc-800 pt-3 flex gap-2">
               <button className="flex-1 text-sm py-2 bg-blue-600/10 border border-blue-500/30 text-blue-400 rounded-lg hover:bg-blue-600/20 transition-colors">Upgrade to Pro</button>
               <button className="px-3 py-2 text-sm text-zinc-600 hover:text-zinc-400 transition-colors">Pause</button>
+            </div>
+          </div>
+
+          {/* Server token re-entry */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-display text-zinc-200 text-sm font-medium">Server token</div>
+                <div className="font-mono text-xs text-zinc-600 mt-0.5">
+                  {apiToken ? '● Connected' : '○ Not connected'}
+                </div>
+              </div>
+              {tokenSaved && (
+                <span className="font-mono text-xs text-emerald-400">✓ Token updated</span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={newToken}
+                onChange={e => setNewToken(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && saveToken()}
+                placeholder="Paste new LIFEOS_API_SECRET…"
+                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 font-mono placeholder-zinc-700 outline-none focus:border-zinc-500"
+              />
+              <button
+                onClick={saveToken}
+                disabled={!newToken.trim()}
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+            </div>
+            <div className="text-xs text-zinc-700">
+              Use this if your session expired or the server was restarted with a new token.
             </div>
           </div>
 
@@ -1056,13 +1428,35 @@ function Settings({ tokenUsed, tokenTotal }) {
               </div>
             ))}
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
-            <div className="font-mono text-xs text-zinc-500 mb-2">BYOK — Anthropic API key</div>
-            <div className="flex items-center gap-2">
-              <input type={apiKeyVisible ? "text" : "password"} value="sk-ant-api03-••••••••••••••••••••••" readOnly className="flex-1 bg-transparent font-mono text-xs text-zinc-400 outline-none" />
-              <button onClick={() => setApiKeyVisible(v => !v)} className="font-mono text-xs text-zinc-600 hover:text-zinc-400">{apiKeyVisible ? "hide" : "show"}</button>
-              <button className="font-mono text-xs text-zinc-600 hover:text-zinc-400">replace</button>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-display text-zinc-200 text-sm font-medium">Anthropic API key</div>
+                <div className="font-mono text-xs text-zinc-600 mt-0.5">Agents won't respond without a valid key</div>
+              </div>
+              {apiKeySaved && <span className="font-mono text-xs text-emerald-400">✓ Key updated</span>}
             </div>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={newApiKey}
+                onChange={e => { setNewApiKey(e.target.value); setApiKeyError(""); }}
+                onKeyDown={e => e.key === 'Enter' && saveApiKey()}
+                placeholder="Paste new sk-ant-… key"
+                className={`flex-1 bg-zinc-950 border rounded-lg px-3 py-2 text-sm text-zinc-300 font-mono placeholder-zinc-700 outline-none focus:border-zinc-500 ${
+                  apiKeyError ? 'border-red-500/50' : 'border-zinc-700'
+                }`}
+              />
+              <button
+                onClick={saveApiKey}
+                disabled={apiKeySaving || !newApiKey.trim()}
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {apiKeySaving ? '…' : 'Save'}
+              </button>
+            </div>
+            {apiKeyError && <div className="font-mono text-xs text-red-400">{apiKeyError}</div>}
+            <div className="text-xs text-zinc-700">Key is sent to your backend server and stored locally. Not transmitted to Anthropic until an agent is activated.</div>
           </div>
         </div>
       )}
@@ -1128,11 +1522,11 @@ export default function App() {
 
       {/* Content */}
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "24px 16px 80px" }}>
-        {screen === "brief"    && <DailyBrief tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} />}
-        {screen === "chat"     && <Conversation tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} />}
-        {screen === "onboard"  && <OnboardingWizard onComplete={token => { setApiToken(token); setScreen("brief"); }} />}
+        {screen === "brief"    && <DailyBrief tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onUnauthorized={() => setScreen("onboard")} />}
+        {screen === "chat"     && <Conversation tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onUnauthorized={() => setScreen("onboard")} />}
+        {screen === "onboard"  && <OnboardingWizard onComplete={(token, _anthropicKey, _customAgents) => { setApiToken(token); setScreen("brief"); }} />}
         {screen === "dash"     && <Dashboard tokenUsed={tokenUsed} tokenTotal={tokenTotal} />}
-        {screen === "settings" && <Settings tokenUsed={tokenUsed} tokenTotal={tokenTotal} />}
+        {screen === "settings" && <Settings tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onTokenUpdate={token => setApiToken(token)} onApiKeyUpdate={() => {}} />}
       </div>
 
       {/* Bottom nav */}
