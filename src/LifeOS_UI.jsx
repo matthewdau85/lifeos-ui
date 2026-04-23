@@ -184,14 +184,7 @@ const ONBOARDING_PROFILES = [
 // ============================================================================
 // API CLIENT
 // ============================================================================
-// API_BASE resolution order:
-//   1. Vite build-time env var (VITE_LIFEOS_API_URL) — set in Vercel env vars for production
-//   2. Runtime window.LIFEOS_API_URL — set by main.jsx or manually for testing
-//   3. localhost:3000 — local development fallback
-const API_BASE =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_LIFEOS_API_URL) ||
-  (typeof window !== 'undefined' && window.LIFEOS_API_URL) ||
-  'http://localhost:3000';
+const API_BASE = (typeof window !== 'undefined' && window.LIFEOS_API_URL) || 'http://localhost:3000';
 
 // onUnauthorized is an optional callback fired when the server returns 401.
 // The App component passes setScreen("onboard") so the user is immediately
@@ -1496,11 +1489,24 @@ const NAV_ITEMS = [
   { id: "settings",label: "Settings", icon: "⊞" },
 ];
 
+const SESSION_TOKEN_KEY = 'lifeos_server_token';
+
 export default function App() {
   const [screen, setScreen] = useState("brief");
   const [tokenUsed] = useState(1420000);
   const [tokenTotal] = useState(6000000);
-  const [apiToken, setApiToken] = useState("");
+  // sessionStorage: survives page refresh within the same browser tab/session,
+  // but is cleared when the browser is closed — a reasonable security/UX balance.
+  // Does NOT use localStorage (persists indefinitely and is readable by any JS).
+  const [apiToken, setApiToken] = useState(() => {
+    try { return sessionStorage.getItem(SESSION_TOKEN_KEY) || ""; }
+    catch { return ""; }
+  });
+
+  function persistToken(token) {
+    setApiToken(token);
+    try { sessionStorage.setItem(SESSION_TOKEN_KEY, token); } catch {}
+  }
 
   return (
     <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#08090b", minHeight: "100vh", color: "#e4e4e7" }}>
@@ -1524,9 +1530,9 @@ export default function App() {
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "24px 16px 80px" }}>
         {screen === "brief"    && <DailyBrief tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onUnauthorized={() => setScreen("onboard")} />}
         {screen === "chat"     && <Conversation tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onUnauthorized={() => setScreen("onboard")} />}
-        {screen === "onboard"  && <OnboardingWizard onComplete={(token, _anthropicKey, _customAgents) => { setApiToken(token); setScreen("brief"); }} />}
+        {screen === "onboard"  && <OnboardingWizard onComplete={(token, _anthropicKey, _customAgents) => { persistToken(token); setScreen("brief"); }} />}
         {screen === "dash"     && <Dashboard tokenUsed={tokenUsed} tokenTotal={tokenTotal} />}
-        {screen === "settings" && <Settings tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onTokenUpdate={token => setApiToken(token)} onApiKeyUpdate={() => {}} />}
+        {screen === "settings" && <Settings tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onTokenUpdate={token => persistToken(token)} onApiKeyUpdate={() => {}} />}
       </div>
 
       {/* Bottom nav */}
