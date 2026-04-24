@@ -260,6 +260,17 @@ const ONBOARDING_PROFILES = [
 ];
 
 // ============================================================================
+// THEME CONSTANTS  (used by wizard + App)
+// ============================================================================
+const THEME_KEY = 'lifeos_theme';
+const THEME_LABELS = { a: 'Clean light', b: 'Dark precise', c: 'Warm dark' };
+const THEME_META = {
+  b: { name: 'Dark precise', desc: 'Clean dark surfaces, blue accent.', bg: '#0d0e11', surface: '#13151a', border: '#1e2028', accent: '#60a5fa', text: '#e4e4e7', muted: '#52525b', checkColor: '#000' },
+  a: { name: 'Clean light',  desc: 'White surfaces, high contrast, minimal chrome.', bg: '#f8f9fa', surface: '#ffffff', border: '#e5e7eb', accent: '#2563eb', text: '#111827', muted: '#9ca3af', checkColor: '#fff' },
+  c: { name: 'Warm dark',    desc: 'Stone tones, amber accent. Comfortable for long sessions.', bg: '#1c1917', surface: '#201e1b', border: '#2a2420', accent: '#f59e0b', text: '#e7e5e4', muted: '#78716c', checkColor: '#000' },
+};
+
+// ============================================================================
 // API CLIENT
 // ============================================================================
 const API_BASE = (typeof window !== 'undefined' && window.LIFEOS_API_URL) || 'http://localhost:3000';
@@ -821,9 +832,9 @@ function Conversation({ tokenUsed, tokenTotal, apiToken, onUnauthorized }) {
 // ============================================================================
 // SCREEN 3 — ONBOARDING WIZARD
 // ============================================================================
-function OnboardingWizard({ onComplete }) {
-  // step -1 = profile picker; step 0 = domains (skipped when profile applied); steps 1-4 = wizard
-  const [step, setStep] = useState(-1);
+function OnboardingWizard({ onComplete, theme, setTheme }) {
+  // step -2 = style picker; step -1 = profile picker; step 0 = domains (skipped when profile applied); steps 1-4 = wizard
+  const [step, setStep] = useState(-2);
   const [appliedProfile, setAppliedProfile] = useState(null);
   const [selectedDomains, setSelectedDomains] = useState(new Set(["health", "financial", "life-admin"]));
   const [profile, setProfile] = useState({ name: "", timezone: "Australia/Brisbane", conditions: "", persona: "balanced" });
@@ -862,7 +873,10 @@ function OnboardingWizard({ onComplete }) {
   }
 
   function goBack() {
-    if (step === 1 && appliedProfile) {
+    if (step === -1) {
+      // Back from profile picker → return to style picker
+      setStep(-2);
+    } else if (step === 1 && appliedProfile) {
       // Back from first wizard step when profile was used → return to profile picker
       setStep(-1);
     } else {
@@ -919,6 +933,93 @@ function OnboardingWizard({ onComplete }) {
         <button className="mt-4 px-6 py-2.5 bg-blue-600 text-white text-sm rounded-xl font-medium hover:bg-blue-500 transition-colors">
           Go to Dashboard
         </button>
+      </div>
+    );
+  }
+
+  // Style picker screen (step -2) — first screen every new user sees
+  if (step === -2) {
+    const currentTheme = theme || 'b';
+    return (
+      <div className="max-w-lg mx-auto font-body slide-in">
+        <div className="mb-8 text-center">
+          <div className="font-display text-zinc-100 text-xl font-semibold mb-2">Choose your style</div>
+          <div className="text-zinc-500 text-sm">Pick the look that suits you — you can change it any time from the theme button.</div>
+        </div>
+
+        <div className="space-y-3 mb-6">
+          {['b', 'a', 'c'].map(id => {
+            const m = THEME_META[id];
+            const isSelected = currentTheme === id;
+            return (
+              <div
+                key={id}
+                onClick={() => setTheme && setTheme(id)}
+                style={{
+                  border: `1px solid ${isSelected ? m.accent : 'var(--lo-border-alt)'}`,
+                  background: isSelected ? `color-mix(in srgb, ${m.accent} 8%, transparent)` : 'var(--lo-card)',
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.15s, background 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                }}
+              >
+                {/* Mini UI preview */}
+                <div style={{ width: 112, height: 66, borderRadius: 7, background: m.bg, border: `1px solid ${m.border}`, overflow: 'hidden', flexShrink: 0 }}>
+                  <div style={{ height: 18, background: m.surface, borderBottom: `1px solid ${m.border}`, display: 'flex', alignItems: 'center', padding: '0 7px', gap: 5 }}>
+                    <div style={{ width: 22, height: 3, background: m.text, borderRadius: 2, opacity: 0.85 }} />
+                    <div style={{ width: 14, height: 3, background: m.muted, borderRadius: 2, opacity: 0.4 }} />
+                  </div>
+                  <div style={{ padding: '5px 7px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <div style={{ flex: 1, height: 13, background: m.surface, border: `1px solid ${m.border}`, borderRadius: 3 }} />
+                      <div style={{ flex: 1, height: 13, background: m.surface, border: `1px solid ${m.accent}`, borderRadius: 3 }} />
+                    </div>
+                    <div style={{ width: 36, height: 7, background: m.accent, borderRadius: 3, marginTop: 2 }} />
+                  </div>
+                </div>
+
+                {/* Label */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                    <span className="font-display" style={{ fontSize: 14, fontWeight: 600, color: 'var(--lo-text)' }}>{m.name}</span>
+                    {isSelected && (
+                      <span style={{ fontSize: 10, background: m.accent, color: m.checkColor, padding: '1px 7px', borderRadius: 20, fontFamily: 'var(--font-mono)' }}>
+                        active
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--lo-text-muted)', lineHeight: 1.5 }}>{m.desc}</div>
+                </div>
+
+                {/* Radio circle */}
+                <div style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  border: `2px solid ${isSelected ? m.accent : 'var(--lo-border-alt)'}`,
+                  background: isSelected ? m.accent : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, transition: 'all 0.15s',
+                }}>
+                  {isSelected && <span style={{ fontSize: 10, color: m.checkColor, lineHeight: 1 }}>✓</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => setStep(-1)}
+          className="w-full py-3 rounded-xl font-display font-medium text-sm transition-colors"
+          style={{ background: 'var(--lo-accent)', color: (currentTheme === 'b' || currentTheme === 'c') ? '#000' : '#fff' }}
+        >
+          Continue →
+        </button>
+        <div className="text-center mt-3">
+          <span className="text-zinc-600 text-xs">You can change this later from the theme button in the top bar.</span>
+        </div>
       </div>
     );
   }
@@ -1568,8 +1669,7 @@ const NAV_ITEMS = [
 ];
 
 const SESSION_TOKEN_KEY = 'lifeos_server_token';
-const THEME_KEY = 'lifeos_theme';
-const THEME_LABELS = { a: 'Minimal', b: 'Dark', c: 'Warm' };
+// THEME_KEY and THEME_LABELS are defined earlier (near API_BASE)
 
 export default function App() {
   const [screen, setScreen] = useState(() => {
@@ -1664,7 +1764,7 @@ export default function App() {
       <div style={{ maxWidth: 800, margin: "0 auto", padding: "24px 16px 80px" }}>
         {screen === "brief"    && <DailyBrief tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onUnauthorized={() => setScreen("onboard")} />}
         {screen === "chat"     && <Conversation tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onUnauthorized={() => setScreen("onboard")} />}
-        {screen === "onboard"  && <OnboardingWizard onComplete={(token, _anthropicKey, _customAgents) => { persistToken(token); setScreen("brief"); }} />}
+        {screen === "onboard"  && <OnboardingWizard theme={theme} setTheme={setTheme} onComplete={(token, _anthropicKey, _customAgents) => { persistToken(token); setScreen("brief"); }} />}
         {screen === "dash"     && <Dashboard tokenUsed={tokenUsed} tokenTotal={tokenTotal} />}
         {screen === "settings" && <Settings tokenUsed={tokenUsed} tokenTotal={tokenTotal} apiToken={apiToken} onTokenUpdate={token => persistToken(token)} onApiKeyUpdate={() => {}} />}
       </div>
