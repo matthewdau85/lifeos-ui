@@ -1,18 +1,96 @@
 import { useState, useEffect, useRef } from "react";
 
 // ============================================================================
-// FONT INJECTION
+// FONT INJECTION + THEME SYSTEM
 // ============================================================================
 const FontStyle = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500&display=swap');
     * { box-sizing: border-box; }
+
+    /* ── Base design tokens (Theme B — Modern Dark, default) ── */
     :root {
       --font-display: 'Space Grotesk', system-ui, sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
       --font-body: 'Inter', system-ui, sans-serif;
+      --lo-bg:          #08090b;
+      --lo-surface:     #0f1014;
+      --lo-card:        #111318;
+      --lo-card-alt:    #161b26;
+      --lo-text:        #e4e4e7;
+      --lo-text-muted:  #71717a;
+      --lo-text-hint:   #3f4147;
+      --lo-border:      #1e2028;
+      --lo-border-alt:  #27272a;
+      --lo-accent:      #60a5fa;
+      --lo-accent-dim:  rgba(96,165,250,0.1);
     }
-    body { background: #08090b; margin: 0; }
+
+    /* ── Theme A — Clean & Minimal (light) ── */
+    [data-theme="a"] {
+      --lo-bg:          #f8f9fa;
+      --lo-surface:     #ffffff;
+      --lo-card:        #f1f3f4;
+      --lo-card-alt:    #e8eaed;
+      --lo-text:        #111827;
+      --lo-text-muted:  #6b7280;
+      --lo-text-hint:   #9ca3af;
+      --lo-border:      #e5e7eb;
+      --lo-border-alt:  #d1d5db;
+      --lo-accent:      #2563eb;
+      --lo-accent-dim:  rgba(37,99,235,0.08);
+    }
+    [data-theme="a"] body { background: #f8f9fa; }
+    [data-theme="a"] .bg-zinc-950 { background-color: #f8f9fa !important; }
+    [data-theme="a"] .bg-zinc-900 { background-color: #f1f3f4 !important; }
+    [data-theme="a"] .bg-zinc-800 { background-color: #e8eaed !important; }
+    [data-theme="a"] .border-zinc-800 { border-color: #e5e7eb !important; }
+    [data-theme="a"] .border-zinc-700 { border-color: #d1d5db !important; }
+    [data-theme="a"] .text-zinc-100 { color: #111827 !important; }
+    [data-theme="a"] .text-zinc-200 { color: #1f2937 !important; }
+    [data-theme="a"] .text-zinc-300 { color: #374151 !important; }
+    [data-theme="a"] .text-zinc-400 { color: #6b7280 !important; }
+    [data-theme="a"] .text-zinc-500 { color: #9ca3af !important; }
+    [data-theme="a"] .text-zinc-600 { color: #9ca3af !important; }
+    [data-theme="a"] .text-zinc-700 { color: #d1d5db !important; }
+    [data-theme="a"] input, [data-theme="a"] textarea, [data-theme="a"] select {
+      color: #111827 !important; background-color: #f1f3f4 !important; border-color: #d1d5db !important;
+    }
+    [data-theme="a"] .scrollbar-thin::-webkit-scrollbar-thumb { background: #d1d5db; }
+
+    /* ── Theme C — Warm & Personal (stone dark) ── */
+    [data-theme="c"] {
+      --lo-bg:          #1c1917;
+      --lo-surface:     #201e1b;
+      --lo-card:        #231f1d;
+      --lo-card-alt:    #2a2623;
+      --lo-text:        #e7e5e4;
+      --lo-text-muted:  #a8a29e;
+      --lo-text-hint:   #78716c;
+      --lo-border:      #292524;
+      --lo-border-alt:  #3d3835;
+      --lo-accent:      #f59e0b;
+      --lo-accent-dim:  rgba(245,158,11,0.1);
+    }
+    [data-theme="c"] body { background: #1c1917; }
+    [data-theme="c"] .bg-zinc-950 { background-color: #1a1714 !important; }
+    [data-theme="c"] .bg-zinc-900 { background-color: #231f1d !important; }
+    [data-theme="c"] .bg-zinc-800 { background-color: #292524 !important; }
+    [data-theme="c"] .border-zinc-800 { border-color: #3d3835 !important; }
+    [data-theme="c"] .border-zinc-700 { border-color: #57534e !important; }
+    [data-theme="c"] .text-zinc-100 { color: #e7e5e4 !important; }
+    [data-theme="c"] .text-zinc-200 { color: #d6d3d1 !important; }
+    [data-theme="c"] .text-zinc-300 { color: #c4b5b0 !important; }
+    [data-theme="c"] .text-zinc-400 { color: #a8a29e !important; }
+    [data-theme="c"] .text-zinc-500 { color: #78716c !important; }
+    [data-theme="c"] .text-zinc-600 { color: #57534e !important; }
+    [data-theme="c"] .text-zinc-700 { color: #44403c !important; }
+    [data-theme="c"] input, [data-theme="c"] textarea, [data-theme="c"] select {
+      color: #e7e5e4 !important; background-color: #231f1d !important; border-color: #3d3835 !important;
+    }
+    [data-theme="c"] .scrollbar-thin::-webkit-scrollbar-thumb { background: #3d3835; }
+
+    body { background: var(--lo-bg); margin: 0; transition: background 0.2s; }
     .font-display { font-family: var(--font-display); }
     .font-mono { font-family: var(--font-mono); }
     .font-body { font-family: var(--font-body); }
@@ -1490,6 +1568,8 @@ const NAV_ITEMS = [
 ];
 
 const SESSION_TOKEN_KEY = 'lifeos_server_token';
+const THEME_KEY = 'lifeos_theme';
+const THEME_LABELS = { a: 'Minimal', b: 'Dark', c: 'Warm' };
 
 export default function App() {
   const [screen, setScreen] = useState(() => {
@@ -1498,13 +1578,20 @@ export default function App() {
   });
   const [tokenUsed] = useState(1420000);
   const [tokenTotal] = useState(6000000);
-  // sessionStorage: survives page refresh within the same browser tab/session,
-  // but is cleared when the browser is closed — a reasonable security/UX balance.
-  // Does NOT use localStorage (persists indefinitely and is readable by any JS).
   const [apiToken, setApiToken] = useState(() => {
     try { return sessionStorage.getItem(SESSION_TOKEN_KEY) || ""; }
     catch { return ""; }
   });
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem(THEME_KEY) || 'b'; }
+    catch { return 'b'; }
+  });
+  const [showThemePicker, setShowThemePicker] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  }, [theme]);
 
   function persistToken(token) {
     setApiToken(token);
@@ -1512,19 +1599,63 @@ export default function App() {
   }
 
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#08090b", minHeight: "100vh", color: "#e4e4e7" }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "var(--lo-bg)", minHeight: "100vh", color: "var(--lo-text)", transition: "background 0.2s, color 0.2s" }}>
       <FontStyle />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Top bar */}
-      <div style={{ background: "#0f1014", borderBottom: "1px solid #1e2028", position: "sticky", top: 0, zIndex: 50 }}>
+      <div style={{ background: "var(--lo-surface)", borderBottom: "1px solid var(--lo-border)", position: "sticky", top: 0, zIndex: 50, transition: "background 0.2s, border-color 0.2s" }}>
         <div style={{ maxWidth: 800, margin: "0 auto", padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 48 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "#e4e4e7", letterSpacing: "-0.02em" }}>LifeOS</span>
-            <span className="font-mono" style={{ fontSize: 10, color: "#3f4147", borderLeft: "1px solid #27272a", paddingLeft: 12 }}>v4.0 · trial</span>
+            <span className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "var(--lo-text)", letterSpacing: "-0.02em" }}>LifeOS</span>
+            <span className="font-mono" style={{ fontSize: 10, color: "var(--lo-text-hint)", borderLeft: "1px solid var(--lo-border-alt)", paddingLeft: 12 }}>v4.0 · trial</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <TokenPoolBar used={tokenUsed} total={tokenTotal} compact />
+            {/* Theme switcher */}
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setShowThemePicker(p => !p)}
+                title={`Theme: ${THEME_LABELS[theme]}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, padding: "4px 8px",
+                  background: "var(--lo-card)", border: "1px solid var(--lo-border)",
+                  borderRadius: 6, cursor: "pointer", color: "var(--lo-text-muted)",
+                  fontSize: 10, fontFamily: "var(--font-mono)", letterSpacing: "0.04em",
+                  transition: "border-color 0.15s",
+                }}
+              >
+                <span style={{ color: "var(--lo-accent)", fontSize: 8 }}>◆</span>
+                {theme.toUpperCase()}
+              </button>
+              {showThemePicker && (
+                <div style={{
+                  position: "absolute", right: 0, top: "calc(100% + 8px)",
+                  background: "var(--lo-surface)", border: "1px solid var(--lo-border)",
+                  borderRadius: 10, padding: 6, display: "flex", flexDirection: "column", gap: 2, zIndex: 100,
+                  minWidth: 110, boxShadow: "0 4px 24px rgba(0,0,0,0.25)",
+                }}>
+                  {["a","b","c"].map(t => (
+                    <button
+                      key={t}
+                      onClick={() => { setTheme(t); setShowThemePicker(false); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
+                        borderRadius: 6, border: "none", cursor: "pointer", textAlign: "left",
+                        background: theme === t ? "var(--lo-accent-dim)" : "transparent",
+                        color: theme === t ? "var(--lo-accent)" : "var(--lo-text-muted)",
+                        fontSize: 12, fontFamily: "var(--font-body)",
+                        transition: "background 0.1s, color 0.1s",
+                      }}
+                    >
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500 }}>{t.toUpperCase()}</span>
+                      <span>{THEME_LABELS[t]}</span>
+                      {theme === t && <span style={{ marginLeft: "auto", fontSize: 8 }}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1539,7 +1670,7 @@ export default function App() {
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0f1014", borderTop: "1px solid #1e2028", zIndex: 50 }}>
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "var(--lo-surface)", borderTop: "1px solid var(--lo-border)", zIndex: 50, transition: "background 0.2s, border-color 0.2s" }}>
         <div style={{ maxWidth: 800, margin: "0 auto", display: "flex" }}>
           {NAV_ITEMS.map(({ id, label, icon }) => (
             <button
@@ -1548,8 +1679,8 @@ export default function App() {
               style={{
                 flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
                 padding: "10px 0", gap: 3, border: "none", background: "transparent",
-                cursor: "pointer", color: screen === id ? "#60a5fa" : "#52525b",
-                borderTop: `2px solid ${screen === id ? "#60a5fa" : "transparent"}`,
+                cursor: "pointer", color: screen === id ? "var(--lo-accent)" : "var(--lo-text-hint)",
+                borderTop: `2px solid ${screen === id ? "var(--lo-accent)" : "transparent"}`,
                 transition: "color 0.15s, border-color 0.15s",
               }}
             >
