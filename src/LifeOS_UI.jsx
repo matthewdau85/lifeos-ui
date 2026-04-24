@@ -1492,7 +1492,10 @@ const NAV_ITEMS = [
 const SESSION_TOKEN_KEY = 'lifeos_server_token';
 
 export default function App() {
-  const [screen, setScreen] = useState("brief");
+  const [screen, setScreen] = useState(() => {
+    try { return sessionStorage.getItem(SESSION_TOKEN_KEY) ? "brief" : "onboard"; }
+    catch { return "onboard"; }
+  });
   const [tokenUsed] = useState(1420000);
   const [tokenTotal] = useState(6000000);
   // sessionStorage: survives page refresh within the same browser tab/session,
